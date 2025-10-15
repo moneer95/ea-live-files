@@ -33,7 +33,7 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 
   // Embed link with your specified iframe format
   const embedLink = `
-        https://pdf.ea-dental.com/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#zoom=page-fit>
+        https://pdf.ea-dental.com/uploads/${encodeURIComponent(fileUrl)}#zoom=page-fit>
   `;
 
 
