@@ -38,6 +38,7 @@ See https://github.com/adobe-type-tools/cmap-resources
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'p' || e.key.toLowerCase() === 'u')) {
         e.preventDefault();
+        throw new Error('Not Allowed')
         return;
       }
     });
@@ -45,6 +46,7 @@ See https://github.com/adobe-type-tools/cmap-resources
     // Prevent print dialog using beforeprint event
     window.addEventListener('beforeprint', (e) => {
       e.preventDefault();
+      throw new Error('Not Allowed')
     });
 
 
