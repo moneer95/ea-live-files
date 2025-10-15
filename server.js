@@ -37,8 +37,26 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
   `;
 
 
-  res.send(`<p>✅ Uploaded! Embed link:</p>
-  <code>&lt;iframe src="https://${req.get("host")}/pdfjs/web/viewer.html?file=${embedLink}" width="100%" height="600"&gt;&lt;/iframe&gt;</code>`);
+  res.send(`
+        <p>✅ Uploaded! Embed link:</p>
+    <code id="embedLink" style="cursor: pointer; color: blue; text-decoration: underline;">
+      &lt;iframe src="https://${req.get("host")}/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}" width="100%" height="600"&gt;&lt;/iframe&gt;
+    </code>
+    <script>
+      // Copy to clipboard function
+      document.getElementById("embedLink").addEventListener("click", function() {
+        const textToCopy = this.textContent; // Get the code text
+        const textArea = document.createElement("textarea"); // Create a temporary textarea element
+        textArea.value = textToCopy; // Set its value to the code text
+        document.body.appendChild(textArea); // Append the textarea to the document
+        textArea.select(); // Select the text
+        document.execCommand("copy"); // Copy the text to the clipboard
+        document.body.removeChild(textArea); // Remove the textarea element
+        alert("Embed link copied to clipboard!"); // Show success message
+      });
+    </script>
+
+    `);
 });
 
 // Handle the file view using PDF.js
