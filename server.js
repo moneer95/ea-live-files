@@ -1,0 +1,44 @@
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+
+const app = express();
+const upload = multer({ dest: path.join(__dirname, "uploads") });
+
+app.use(express.static("public"));
+app.use("/uploads", express.static("uploads"));
+
+app.post("/upload", upload.single("pdf"), (req, res) => {
+  const oldPath = req.file.path;
+  const newPath = path.join(__dirname, "uploads", req.file.filename + ".pdf");
+  fs.renameSync(oldPath, newPath);
+  res.send(`<p>✅ Uploaded! Embed link:</p>
+  <code>&lt;iframe src="${req.protocol}://${req.get("host")}/view/${req.file.filename}.pdf" width="100%" height="600"&gt;&lt;/iframe&gt;</code>`);
+});
+
+app.get("/view/:filename", (req, res) => {
+  if(req.originalUrl != "moodle.ea-dental.com"){
+    res.send(`<h1>just open inside moodle</h1>`)
+  }
+  const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.params.filename}`;
+  res.send(`
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          html, body { margin:0; height:100%; overflow:hidden; }
+          iframe { border:0; width:100%; height:100%; }
+        </style>
+      </head>
+      <body>
+        <iframe
+          src="/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#toolbar=0&download=false&print=false"
+        ></iframe>
+      </body>
+    </html>
+  `);
+});
+
+
+app.listen(3000, () => console.log("✅ Server running at http://localhost:3000"));
