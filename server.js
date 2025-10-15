@@ -12,6 +12,16 @@ app.use("/uploads", express.static("uploads"));
 // Serve PDF.js from the "public" folder (it should be inside "public/pdfjs")
 app.use("/pdfjs", express.static(path.join(__dirname, "public/pdfjs")));
 
+
+// 10-minute timeout
+app.use((req, res, next) => {
+  res.setTimeout(600000, () => { // 10-minute timeout
+    res.status(408).send('Request Timeout');
+  });
+  next();
+});
+
+
 // Handle file uploads
 app.post("/upload", upload.single("pdf"), (req, res) => {
   const oldPath = req.file.path;
