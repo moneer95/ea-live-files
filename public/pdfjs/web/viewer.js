@@ -1742,10 +1742,10 @@ function webViewerNamedAction(evt) {
       }
       break;
     case "Print":
-      PDFViewerApplication.triggerPrinting();
+      // PDFViewerApplication.triggerPrinting();
       break;
     case "SaveAs":
-      PDFViewerApplication.downloadOrSave();
+      // PDFViewerApplication.downloadOrSave();
       break;
   }
 }
@@ -1845,7 +1845,7 @@ function webViewerPrint() {
   PDFViewerApplication.triggerPrinting();
 }
 function webViewerDownload() {
-  PDFViewerApplication.downloadOrSave();
+  // PDFViewerApplication.downloadOrSave();
 }
 function webViewerOpenInExternalApp() {
   PDFViewerApplication.openInExternalApp();
@@ -13830,7 +13830,7 @@ function ensureOverlay() {
   return overlayPromise;
 }
 _app.PDFPrintServiceFactory.instance = {
-  supportsPrinting: true,
+  supportsPrinting: false,
   createPrintService(pdfDocument, pagesOverview, printContainer, printResolution, optionalContentConfigPromise, printAnnotationStoragePromise, l10n) {
     if (activeService) {
       throw new Error("The print service is created and active.");
