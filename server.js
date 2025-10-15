@@ -18,9 +18,6 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 });
 
 app.get("/view/:filename", (req, res) => {
-  if(req.originalUrl != "moodle.ea-dental.com"){
-    res.send(`<h1>just open inside moodle</h1>`)
-  }
   const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.params.filename}`;
   res.send(`
     <html>
