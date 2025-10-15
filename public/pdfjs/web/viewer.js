@@ -1842,13 +1842,13 @@ function webViewerSwitchAnnotationEditorParams(evt) {
   PDFViewerApplication.pdfViewer.annotationEditorParams = evt;
 }
 function webViewerPrint() {
-  PDFViewerApplication.triggerPrinting();
+  // PDFViewerApplication.triggerPrinting();
 }
 function webViewerDownload() {
   // PDFViewerApplication.downloadOrSave();
 }
 function webViewerOpenInExternalApp() {
-  PDFViewerApplication.openInExternalApp();
+  // PDFViewerApplication.openInExternalApp();
 }
 function webViewerFirstPage() {
   PDFViewerApplication.page = 1;
@@ -13801,6 +13801,7 @@ function renderProgress(index, total, l10n) {
 }
 window.addEventListener("keydown", function (event) {
   if (event.keyCode === 80 && (event.ctrlKey || event.metaKey) && !event.altKey && (!event.shiftKey || window.chrome || window.opera)) {
+    return
     window.print();
     event.preventDefault();
     event.stopImmediatePropagation();
