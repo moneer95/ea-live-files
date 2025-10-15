@@ -32,23 +32,6 @@ See https://github.com/adobe-type-tools/cmap-resources
   <link rel="resource" type="application/l10n" href="locale/locale.properties">
 
 
-  <script>
-    document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'p' || e.key.toLowerCase() === 'u')) {
-        e.preventDefault();
-        throw new Error('Not Allowed')
-        return;
-      }
-    });
-
-    // Prevent print dialog using beforeprint event
-    window.addEventListener('beforeprint', (e) => {
-      e.preventDefault();
-      throw new Error('Not Allowed')
-    });
-  </script>
-
-
   <script disable-devtool-auto src='https://cdn.jsdelivr.net/npm/disable-devtool/disable-devtool.min.js'></script>
 
   <script src="../build/pdf.js"></script>
@@ -346,7 +329,7 @@ See https://github.com/adobe-type-tools/cmap-resources
                 data-l10n-id="page" autocomplete="off">
               <span id="numPages" class="toolbarLabel"></span>
             </div>
-            <div id="toolbarViewerRight">
+            <!-- <div id="toolbarViewerRight">
               <button id="openFile" class="toolbarButton hiddenLargeView" title="Open File" tabindex="31"
                 data-l10n-id="open_file">
                 <span data-l10n-id="open_file_label">Open</span>
@@ -387,7 +370,8 @@ See https://github.com/adobe-type-tools/cmap-resources
                 aria-expanded="false" aria-controls="secondaryToolbar">
                 <span data-l10n-id="tools_label">Tools</span>
               </button>
-            </div>
+            </div> -->
+
             <div id="toolbarViewerMiddle">
               <div class="splitToolbarButton">
                 <button id="zoomOut" class="toolbarButton" title="Zoom Out" tabindex="21" data-l10n-id="zoom_out">
