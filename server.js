@@ -29,7 +29,7 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
   fs.renameSync(oldPath, newPath);
 
   // Construct the URL for the uploaded PDF
-  const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}.pdf`;
+  const fileUrl = `https://${req.get("host")}/uploads/${req.file.filename}.pdf`;
 
   // Embed link with your specified iframe format
   const embedLink = `
