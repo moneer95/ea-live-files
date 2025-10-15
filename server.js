@@ -38,7 +38,7 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 
 
   res.send(`<p>✅ Uploaded! Embed link:</p>
-  <code>&lt;iframe src="https://${req.get("host")}/uploads/${embedLink}.pdf" width="100%" height="600"&gt;&lt;/iframe&gt;</code>`);
+  <code>&lt;iframe src="https://${req.get("host")}/uploads/${embedLink}" width="100%" height="600"&gt;&lt;/iframe&gt;</code>`);
 });
 
 // Handle the file view using PDF.js
