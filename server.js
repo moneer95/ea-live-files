@@ -12,23 +12,26 @@ app.use("/uploads", express.static("uploads"));
 // Serve PDF.js from the "public" folder (it should be inside "public/pdfjs")
 app.use("/pdfjs", express.static(path.join(__dirname, "public/pdfjs")));
 
-
-// 10-minute timeout
-app.use((req, res, next) => {
-  res.setTimeout(600000, () => { // 10-minute timeout
-    res.status(408).send('Request Timeout');
-  });
-  next();
-});
-
-
 // Handle file uploads
 app.post("/upload", upload.single("pdf"), (req, res) => {
   const oldPath = req.file.path;
   const newPath = path.join(__dirname, "uploads", req.file.filename + ".pdf");
   fs.renameSync(oldPath, newPath);
+
+  // Construct the URL for the uploaded PDF
+  const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}.pdf`;
+  
+  // Embed link with your specified iframe format
+  const embedLink = `
+    <div style="height: 90vh;">
+      <iframe style="width: 100%; height: 100%; border: 0;"
+        src="https://pdf.ea-dental.com/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#zoom=page-fit">
+      </iframe>
+    </div>
+  `;
+  
   res.send(`<p>✅ Uploaded! Embed link:</p>
-  <code>&lt;iframe src="${req.protocol}://${req.get("host")}/uploads/${req.file.filename}.pdf" width="100%" height="600"&gt;&lt;/iframe&gt;</code>`);
+  <code>${embedLink}</code>`);
 });
 
 // Handle the file view using PDF.js
@@ -47,7 +50,7 @@ app.get("/view/:filename", (req, res) => {
       </head>
       <body>
         <iframe
-          src="/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#toolbar=0&download=false&print=false"
+          src="/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#zoom=page-fit"
         ></iframe>
       </body>
     </html>
