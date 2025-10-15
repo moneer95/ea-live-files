@@ -61,7 +61,7 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 
 // Handle the file view using PDF.js
 app.get("/view/:filename", (req, res) => {
-  const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.params.filename}`;
+  const fileUrl = `https://${req.get("host")}/uploads/${req.params.filename}`;
 
   // Embed PDF.js viewer and pass the file URL as a query parameter
   res.send(`
