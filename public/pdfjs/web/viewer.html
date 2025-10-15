@@ -31,8 +31,6 @@ See https://github.com/adobe-type-tools/cmap-resources
   <!-- This snippet is used in production (included from viewer.html) -->
   <link rel="resource" type="application/l10n" href="locale/locale.properties">
 
-  <script disable-devtool-auto src='https://cdn.jsdelivr.net/npm/disable-devtool/disable-devtool.min.js'></script>
-
 
   <script>
     document.addEventListener('keydown', (e) => {
@@ -48,21 +46,10 @@ See https://github.com/adobe-type-tools/cmap-resources
       e.preventDefault();
       throw new Error('Not Allowed')
     });
-
-
-    // Show the loader
-    document.getElementById('loader').style.display = 'flex';
-
-    // Hide the loader after 5 seconds
-    setTimeout(function () {
-      document.getElementById('loader').style.display = 'none';
-
-      // You can also render your PDF or other content here
-      document.getElementById('viewer').style.display = 'block'; // For example, showing the PDF content
-
-    }, 5000);  // 5000 milliseconds = 5 seconds
-
   </script>
+
+
+  <script disable-devtool-auto src='https://cdn.jsdelivr.net/npm/disable-devtool/disable-devtool.min.js'></script>
 
   <script src="../build/pdf.js"></script>
 
@@ -85,14 +72,6 @@ See https://github.com/adobe-type-tools/cmap-resources
 
 
 <body tabindex="1">
-
-
-  <!-- Loader div -->
-  <div id="loader" class="loader">
-    <div class="spinner"></div>
-    Loading...
-  </div>
-
 
   <div id="outerContainer">
 
