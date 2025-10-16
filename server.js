@@ -61,6 +61,11 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 
 // Handle the file view using PDF.js
 app.get("/view/:filename", (req, res) => {
+
+  if(req.originalUrl != "moodle.ea-dental.com"){
+    return("<a href='https://ea-dental.com'>Just inside EA-Dental Moodle</a>")
+  }
+
   const fileUrl = `https://${req.get("host")}/uploads/${req.params.filename}`;
 
   // Embed PDF.js viewer and pass the file URL as a query parameter
