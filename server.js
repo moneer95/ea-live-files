@@ -62,6 +62,7 @@ app.post("/upload", upload.single("pdf"), (req, res) => {
 // Handle the file view using PDF.js
 app.get("/view/:filename", (req, res) => {
 
+  console.log(req.originalUrl)
   if(req.originalUrl != "moodle.ea-dental.com"){
     return("<a href='https://ea-dental.com'>Just inside EA-Dental Moodle</a>")
   }
