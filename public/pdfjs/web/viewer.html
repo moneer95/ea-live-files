@@ -575,6 +575,27 @@ See https://github.com/adobe-type-tools/cmap-resources
   <div id="printContainer"></div>
 
   <input type="file" id="fileInput" class="hidden">
+
+  <script>
+    (function () {
+      function selectionTouchesViewer(viewer) {
+        var sel = document.getSelection();
+        if (!sel || sel.rangeCount === 0) return false;
+        for (var i = 0; i < sel.rangeCount; i++) {
+          if (viewer.contains(sel.getRangeAt(i).commonAncestorContainer)) return true;
+        }
+        return viewer.contains(sel.anchorNode) || viewer.contains(sel.focusNode);
+      }
+      function blockClipboard(ev) {
+        var viewer = document.getElementById("viewerContainer");
+        if (!viewer || !selectionTouchesViewer(viewer)) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+      document.addEventListener("copy", blockClipboard, true);
+      document.addEventListener("cut", blockClipboard, true);
+    })();
+  </script>
 </body>
 
 </html>
