@@ -240,23 +240,20 @@ const PDFViewerApplication = {
     this._initializedCapability.resolve();
   },
   async _initializeOptions() {
-    if (_app_options.AppOptions.get("disablePreferences")) {
-      if (_app_options.AppOptions.get("pdfBugEnabled")) {
-        await this._parseHashParams();
+    if (!_app_options.AppOptions.get("disablePreferences")) {
+      if (_app_options.AppOptions._hasUserOptions()) {
+        console.warn("_initializeOptions: The Preferences may override manually set AppOptions; " + 'please use the "disablePreferences"-option in order to prevent that.');
       }
-      return;
-    }
-    if (_app_options.AppOptions._hasUserOptions()) {
-      console.warn("_initializeOptions: The Preferences may override manually set AppOptions; " + 'please use the "disablePreferences"-option in order to prevent that.');
-    }
-    try {
-      _app_options.AppOptions.setAll(await this.preferences.getAll());
-    } catch (reason) {
-      console.error(`_initializeOptions: "${reason.message}".`);
+      try {
+        _app_options.AppOptions.setAll(await this.preferences.getAll());
+      } catch (reason) {
+        console.error(`_initializeOptions: "${reason.message}".`);
+      }
     }
     if (_app_options.AppOptions.get("pdfBugEnabled")) {
       await this._parseHashParams();
     }
+    _app_options.AppOptions.set("textLayerMode", _ui_utils.TextLayerMode.DISABLE);
   },
   async _parseHashParams() {
     const hash = document.location.hash.substring(1);
@@ -3108,7 +3105,7 @@ const defaultOptions = {
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   textLayerMode: {
-    value: 1,
+    value: 0,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE
   },
   viewerCssTheme: {
@@ -12583,7 +12580,7 @@ class BasePreferences {
     "sidebarViewOnLoad": -1,
     "scrollModeOnLoad": -1,
     "spreadModeOnLoad": -1,
-    "textLayerMode": 1,
+    "textLayerMode": 0,
     "viewerCssTheme": 0,
     "viewOnLoad": 0,
     "disableAutoFetch": false,
