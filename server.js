@@ -2,26 +2,86 @@ const express = require("express");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const cookieSession = require("cookie-session");
 
 const app = express();
+
+const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-production";
+const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || "dev";
+
+if (!process.env.UPLOAD_PASSWORD) {
+  console.warn("UPLOAD_PASSWORD not set; using default \"dev\" (set env in production).");
+}
+if (!process.env.SESSION_SECRET) {
+  console.warn("SESSION_SECRET not set; using insecure default (set env in production).");
+}
+
+app.use(
+  cookieSession({
+    name: "upload_session",
+    keys: [SESSION_SECRET],
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: "lax",
+  })
+);
+
+app.use(express.urlencoded({ extended: true }));
+
 const upload = multer({ dest: path.join(__dirname, "uploads") });
 
-app.use(express.static("public"));
+function safeNext(n) {
+  if (typeof n !== "string" || !n.startsWith("/") || n.startsWith("//")) return "/";
+  return n;
+}
+
+function requireUploadAuth(req, res, next) {
+  if (req.session && req.session.uploadAuth === true) return next();
+  const nextUrl =
+    req.method === "POST" && req.path === "/upload" ? "/" : req.originalUrl.split("?")[0] || "/";
+  if (req.accepts("html")) {
+    return res.redirect(303, "/login?next=" + encodeURIComponent(safeNext(nextUrl)));
+  }
+  res.status(401).send("Unauthorized");
+}
+
+// 10-minute timeout
+app.use((req, res, next) => {
+  res.setTimeout(600000, () => {
+    res.status(408).send("Request Timeout");
+  });
+  next();
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "login.html"));
+});
+
+app.post("/login", (req, res) => {
+  const password = req.body.password;
+  const nextRaw = req.body.next;
+  if (password === UPLOAD_PASSWORD) {
+    req.session.uploadAuth = true;
+    return res.redirect(303, safeNext(nextRaw));
+  }
+  res.redirect(
+    303,
+    "/login?error=1&next=" + encodeURIComponent(safeNext(nextRaw))
+  );
+});
+
+app.get("/", requireUploadAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.use(express.static("public", { index: false }));
 app.use("/uploads", express.static("uploads"));
 
 // Serve PDF.js from the "public" folder (it should be inside "public/pdfjs")
 app.use("/pdfjs", express.static(path.join(__dirname, "public/pdfjs")));
 
-// 10-minute timeout
-app.use((req, res, next) => {
-  res.setTimeout(600000, () => { // 10-minute timeout
-    res.status(408).send('Request Timeout');
-  });
-  next();
-});
-
 // Handle file uploads
-app.post("/upload", upload.single("pdf"), (req, res) => {
+app.post("/upload", requireUploadAuth, upload.single("pdf"), (req, res) => {
   const oldPath = req.file.path;
   const newPath = path.join(__dirname, "uploads", req.file.filename + ".pdf");
   fs.renameSync(oldPath, newPath);

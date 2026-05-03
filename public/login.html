@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upload login</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f4f4f5;
+    }
+    .card {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+      width: 100%;
+      max-width: 360px;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 1rem; font-weight: 600; }
+    label { display: block; font-size: 0.875rem; margin-bottom: 0.35rem; color: #374151; }
+    input[type="password"] {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    button {
+      margin-top: 1rem;
+      width: 100%;
+      padding: 0.55rem 1rem;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    .err {
+      margin-bottom: 1rem;
+      padding: 0.5rem 0.65rem;
+      background: #fef2f2;
+      color: #b91c1c;
+      border-radius: 6px;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Sign in to upload</h1>
+    <p id="err" class="err" hidden>Incorrect password.</p>
+    <form method="post" action="/login">
+      <input type="hidden" name="next" id="next" value="/">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit">Continue</button>
+    </form>
+  </div>
+  <script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      if (params.get("error")) {
+        document.getElementById("err").hidden = false;
+      }
+      var n = params.get("next");
+      if (n) document.getElementById("next").value = n;
+    })();
+  </script>
+</body>
+</html>
