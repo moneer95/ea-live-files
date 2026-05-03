@@ -5,8 +5,13 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const cookieSession = require("cookie-session");
+const { isPdfFileSync } = require("./pdf-validate");
 
 const app = express();
+
+if (process.env.TRUST_PROXY === "1" || process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-in-production";
 const UPLOAD_PASSWORD = process.env.UPLOAD_PASSWORD || "dev";
@@ -30,7 +35,10 @@ app.use(
 
 app.use(express.urlencoded({ extended: true }));
 
-const upload = multer({ dest: path.join(__dirname, "uploads") });
+const upload = multer({
+  dest: path.join(__dirname, "uploads"),
+  limits: { fileSize: 100 * 1024 * 1024 },
+});
 
 function safeNext(n) {
   if (typeof n !== "string" || !n.startsWith("/") || n.startsWith("//")) return "/";
@@ -84,7 +92,20 @@ app.use("/pdfjs", express.static(path.join(__dirname, "public/pdfjs")));
 
 // Handle file uploads
 app.post("/upload", requireUploadAuth, upload.single("pdf"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).type("text/plain").send("No file uploaded.");
+  }
+
   const oldPath = req.file.path;
+  if (!isPdfFileSync(oldPath)) {
+    try {
+      fs.unlinkSync(oldPath);
+    } catch (_) {
+      /* ignore */
+    }
+    return res.status(400).type("text/plain").send("Upload rejected: not a valid PDF file.");
+  }
+
   const newPath = path.join(__dirname, "uploads", req.file.filename + ".pdf");
   fs.renameSync(oldPath, newPath);
 
@@ -187,4 +208,16 @@ app.get("/view/:filename", (req, res) => {
   `);
 });
 
-app.listen(3000, () => console.log("✅ Server running at http://localhost:3000"));
+app.use((err, req, res, next) => {
+  if (err && err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).type("text/plain").send("File too large.");
+  }
+  next(err);
+});
+
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || "0.0.0.0";
+
+app.listen(PORT, HOST, () => {
+  console.log(`✅ Server listening on http://${HOST}:${PORT}`);
+});
