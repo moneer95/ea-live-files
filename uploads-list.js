@@ -157,10 +157,10 @@ async function getPdfOverview(uploadsDir, entry) {
 }
 
 function buildFileUrls(baseUrl, name) {
-  const embedUrl = baseUrl + "/embed/" + name;
+  const fileUrl = baseUrl + "/uploads/" + name;
   return {
-    viewUrl: baseUrl + "/pdfjs/web/viewer.html?file=" + encodeURIComponent(embedUrl),
-    downloadUrl: baseUrl + "/uploads/" + name,
+    viewUrl: baseUrl + "/pdfjs/web/viewer.html?file=" + encodeURIComponent(fileUrl),
+    downloadUrl: baseUrl + "/download/" + encodeURIComponent(name),
   };
 }
 

@@ -76,30 +76,6 @@ function requireUploadAuth(req, res, next) {
   res.status(401).send("Unauthorized");
 }
 
-function sendPdfFile(res, filename) {
-  const safeName = safePdfFilename(filename);
-  if (!safeName) {
-    res.status(400).type("text/plain").send("Invalid filename.");
-    return false;
-  }
-
-  const filePath = path.join(UPLOADS_DIR, safeName);
-  if (!fs.existsSync(filePath) || !isPdfFileSync(filePath)) {
-    res.status(404).type("text/plain").send("File not found.");
-    return false;
-  }
-
-  res.type("application/pdf");
-  res.sendFile(filePath);
-  return true;
-}
-
-function buildViewerUrl(baseUrl, filename, hash) {
-  const embedUrl = baseUrl + "/embed/" + filename;
-  const viewerUrl = baseUrl + "/pdfjs/web/viewer.html?file=" + encodeURIComponent(embedUrl);
-  return hash ? viewerUrl + hash : viewerUrl;
-}
-
 // 10-minute timeout
 app.use((req, res, next) => {
   res.setTimeout(600000, () => {
@@ -166,14 +142,20 @@ app.get("/download/:filename", requireUploadAuth, (req, res) => {
   res.download(filePath, filename);
 });
 
-// Public PDF access for PDF.js viewer / Moodle embeds (no login required).
-app.get("/embed/:filename", (req, res) => {
-  sendPdfFile(res, req.params.filename);
-});
+// Public PDF files for PDF.js / Moodle embeds (no login). Filenames are unguessable hashes.
+app.get("/uploads/:filename", (req, res) => {
+  const filename = safePdfFilename(req.params.filename);
+  if (!filename) {
+    return res.status(400).type("text/plain").send("Invalid filename.");
+  }
 
-// Direct file access for authenticated dashboard downloads.
-app.get("/uploads/:filename", requireUploadAuth, (req, res) => {
-  sendPdfFile(res, req.params.filename);
+  const filePath = path.join(UPLOADS_DIR, filename);
+  if (!fs.existsSync(filePath) || !isPdfFileSync(filePath)) {
+    return res.status(404).type("text/plain").send("File not found.");
+  }
+
+  res.type("application/pdf");
+  res.sendFile(filePath);
 });
 
 app.use(express.static("public", { index: false }));
@@ -201,15 +183,12 @@ app.post("/upload", requireUploadAuth, upload.single("pdf"), (req, res) => {
   fs.renameSync(oldPath, newPath);
   queueSearchIndexRefresh(UPLOADS_DIR);
 
-  // Public URL used by PDF.js viewer inside Moodle embeds.
-  const fileUrl = getBaseUrl(req) + "/embed/" + req.file.filename + ".pdf";
+  // Direct URL to the uploaded PDF (requires login unless using a public embed token)
+  const fileUrl = getBaseUrl(req) + "/uploads/" + req.file.filename + ".pdf";
 
   // PDF.js viewer URL
-  const viewerUrl = buildViewerUrl(
-    getBaseUrl(req),
-    req.file.filename + ".pdf",
-    "#toolbar=0&download=false&print=false"
-  );
+  const viewerUrl =
+    getBaseUrl(req) + "/pdfjs/web/viewer.html?file=" + encodeURIComponent(fileUrl) + "#toolbar=0&download=false&print=false";
 
   // The fullscreen wrapper structure you want teachers to embed in Moodle
   const iframeHtml = `
@@ -280,18 +259,14 @@ ${escapedIframeHtml}
   `);
 });
 
-// Handle the file view using PDF.js (public; uses /embed/ for the PDF source).
+// Handle the file view using PDF.js
 app.get("/view/:filename", (req, res) => {
   const filename = safePdfFilename(req.params.filename);
   if (!filename) {
     return res.status(400).type("text/plain").send("Invalid filename.");
   }
 
-  const viewerUrl = buildViewerUrl(
-    getBaseUrl(req),
-    filename,
-    "#toolbar=0&download=false&print=false"
-  );
+  const fileUrl = getBaseUrl(req) + "/uploads/" + filename;
 
   // Embed PDF.js viewer and pass the file URL as a query parameter
   res.send(`
@@ -304,7 +279,9 @@ app.get("/view/:filename", (req, res) => {
         </style>
       </head>
       <body>
-        <iframe src="${viewerUrl}"></iframe>
+        <iframe
+          src="/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#toolbar=0&download=false&print=false">
+        </iframe>
       </body>
     </html>
   `);
