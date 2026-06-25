@@ -2,13 +2,84 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Upload PDF</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    margin: 0;
+    min-height: 100vh;
+    background: #f4f4f5;
+    color: #18181b;
+  }
+  .header {
+    background: #fff;
+    border-bottom: 1px solid #e4e4e7;
+    padding: 1rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .header h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+  .header a {
+    color: #2563eb;
+    text-decoration: none;
+    font-size: 0.9375rem;
+  }
+  .header a:hover { text-decoration: underline; }
+  main {
+    max-width: 480px;
+    margin: 2rem auto;
+    padding: 0 1.5rem;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    padding: 1.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+  .card p {
+    margin: 0 0 1rem;
+    color: #52525b;
+    font-size: 0.9375rem;
+  }
+  input[type="file"] {
+    display: block;
+    width: 100%;
+    margin-bottom: 1rem;
+  }
+  button {
+    padding: 0.55rem 1rem;
+    background: #2563eb;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  button:hover { background: #1d4ed8; }
+</style>
 </head>
 <body>
-  <h2>Upload PDF to Embed</h2>
-  <form action="/upload" method="post" enctype="multipart/form-data">
-    <input type="file" name="pdf" accept="application/pdf" required>
-    <button type="submit">Uploade</button>
-  </form>
+  <header class="header">
+    <h1>Upload PDF</h1>
+    <a href="/dashboard">Dashboard</a>
+  </header>
+  <main>
+    <div class="card">
+      <p>Upload a PDF to generate an embed code for Moodle.</p>
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="pdf" accept="application/pdf" required>
+        <button type="submit">Upload</button>
+      </form>
+    </div>
+  </main>
 </body>
 </html>

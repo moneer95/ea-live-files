@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF Dashboard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: #f4f4f5;
+      color: #18181b;
+    }
+    .header {
+      background: #fff;
+      border-bottom: 1px solid #e4e4e7;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 600;
+    }
+    .header nav {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .header a {
+      color: #2563eb;
+      text-decoration: none;
+      font-size: 0.9375rem;
+    }
+    .header a:hover { text-decoration: underline; }
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+    .toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .filter {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+    .filter label {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #374151;
+    }
+    .filter input {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid #d4d4d8;
+      border-radius: 8px;
+      font-size: 1rem;
+      background: #fff;
+    }
+    .filter input:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    .summary {
+      color: #52525b;
+      font-size: 0.9375rem;
+      margin: 0;
+    }
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .file-card {
+      background: #fff;
+      border: 1px solid #e4e4e7;
+      border-radius: 10px;
+      padding: 1.25rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .file-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .file-name {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      word-break: break-all;
+    }
+    .file-meta {
+      margin: 0.35rem 0 0;
+      font-size: 0.8125rem;
+      color: #71717a;
+    }
+    .file-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.45rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      text-decoration: none;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-secondary {
+      background: #f4f4f5;
+      color: #18181b;
+      border: 1px solid #d4d4d8;
+    }
+    .btn-secondary:hover { background: #e4e4e7; }
+    .preview {
+      margin: 0;
+      font-size: 0.9375rem;
+      line-height: 1.55;
+      color: #3f3f46;
+    }
+    .empty, .error, .loading {
+      background: #fff;
+      border: 1px solid #e4e4e7;
+      border-radius: 10px;
+      padding: 2rem;
+      text-align: center;
+      color: #52525b;
+    }
+    .error { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>PDF Dashboard</h1>
+    <nav>
+      <a href="/">Upload</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <div class="filter">
+        <label for="contentFilter">Filter by PDF content</label>
+        <input
+          id="contentFilter"
+          type="search"
+          placeholder="Search inside PDF text…"
+          autocomplete="off"
+          disabled
+        >
+      </div>
+      <p id="summary" class="summary">Loading files…</p>
+    </div>
+    <div id="content" class="loading">Loading files…</div>
+  </main>
+
+  <script>
+    var allFiles = [];
+
+    function formatDate(iso) {
+      return new Date(iso).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/'/g, "&#39;");
+    }
+
+    function matchesContentFilter(file, query) {
+      if (!query) return true;
+      var haystack = ((file.content || "") + " " + (file.preview || "") + " " + (file.name || "")).toLowerCase();
+      return haystack.indexOf(query) !== -1;
+    }
+
+    function getFilteredFiles() {
+      var query = document.getElementById("contentFilter").value.trim().toLowerCase();
+      return allFiles.filter(function (file) {
+        return matchesContentFilter(file, query);
+      });
+    }
+
+    function updateSummary(visibleCount, totalCount, query) {
+      var summary = document.getElementById("summary");
+
+      if (!totalCount) {
+        summary.textContent = "No PDF files uploaded yet.";
+        return;
+      }
+
+      if (!query) {
+        summary.textContent = totalCount + " file" + (totalCount === 1 ? "" : "s") + " available";
+        return;
+      }
+
+      summary.textContent =
+        visibleCount + " of " + totalCount + " file" + (totalCount === 1 ? "" : "s") +
+        " match \"" + query + "\"";
+    }
+
+    function renderFileCards(files) {
+      return files.map(function (file) {
+        var meta = file.sizeLabel + " · " + formatDate(file.modified);
+        if (file.pages) meta += " · " + file.pages + " page" + (file.pages === 1 ? "" : "s");
+
+        return (
+          "<article class=\"file-card\">" +
+            "<div class=\"file-top\">" +
+              "<div>" +
+                "<h2 class=\"file-name\">" + escapeHtml(file.name) + "</h2>" +
+                "<p class=\"file-meta\">" + escapeHtml(meta) + "</p>" +
+              "</div>" +
+              "<div class=\"file-actions\">" +
+                "<a class=\"btn btn-secondary\" href=\"" + escapeAttr(file.viewUrl) + "\">View</a>" +
+                "<a class=\"btn btn-primary\" href=\"" + escapeAttr(file.downloadUrl) + "\" download>Download</a>" +
+              "</div>" +
+            "</div>" +
+            "<p class=\"preview\">" + escapeHtml(file.preview) + "</p>" +
+          "</article>"
+        );
+      }).join("");
+    }
+
+    function renderDashboard() {
+      var content = document.getElementById("content");
+      var query = document.getElementById("contentFilter").value.trim().toLowerCase();
+      var files = getFilteredFiles();
+
+      updateSummary(files.length, allFiles.length, query);
+
+      if (!allFiles.length) {
+        content.className = "empty";
+        content.innerHTML = "<p>No files found. <a href=\"/\">Upload a PDF</a> to get started.</p>";
+        return;
+      }
+
+      if (!files.length) {
+        content.className = "empty";
+        content.innerHTML = "<p>No PDFs match your search. Try different words from the document text.</p>";
+        return;
+      }
+
+      content.className = "file-list";
+      content.innerHTML = renderFileCards(files);
+    }
+
+    document.getElementById("contentFilter").addEventListener("input", renderDashboard);
+
+    fetch("/api/files")
+      .then(function (res) {
+        if (!res.ok) throw new Error("Could not load files.");
+        return res.json();
+      })
+      .then(function (data) {
+        allFiles = data.files || [];
+        var filterInput = document.getElementById("contentFilter");
+        filterInput.disabled = !allFiles.length;
+        renderDashboard();
+      })
+      .catch(function () {
+        document.getElementById("summary").textContent = "";
+        var content = document.getElementById("content");
+        content.className = "error";
+        content.textContent = "Failed to load the file list. Please refresh the page.";
+      });
+  </script>
+</body>
+</html>

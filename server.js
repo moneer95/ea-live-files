@@ -6,6 +6,9 @@ const path = require("path");
 const fs = require("fs");
 const cookieSession = require("cookie-session");
 const { isPdfFileSync } = require("./pdf-validate");
+const { listUploadFiles, safePdfFilename } = require("./uploads-list");
+
+const UPLOADS_DIR = path.join(__dirname, "uploads");
 
 const app = express();
 
@@ -36,7 +39,7 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 
 const upload = multer({
-  dest: path.join(__dirname, "uploads"),
+  dest: UPLOADS_DIR,
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
@@ -84,6 +87,34 @@ app.get("/", requireUploadAuth, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
+app.get("/dashboard", requireUploadAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+});
+
+app.get("/api/files", requireUploadAuth, async (req, res) => {
+  try {
+    const files = await listUploadFiles(UPLOADS_DIR);
+    res.json({ files });
+  } catch (err) {
+    console.error("Failed to list uploads:", err);
+    res.status(500).json({ error: "Failed to list files." });
+  }
+});
+
+app.get("/download/:filename", (req, res) => {
+  const filename = safePdfFilename(req.params.filename);
+  if (!filename) {
+    return res.status(400).type("text/plain").send("Invalid filename.");
+  }
+
+  const filePath = path.join(UPLOADS_DIR, filename);
+  if (!fs.existsSync(filePath) || !isPdfFileSync(filePath)) {
+    return res.status(404).type("text/plain").send("File not found.");
+  }
+
+  res.download(filePath, filename);
+});
+
 app.use(express.static("public", { index: false }));
 app.use("/uploads", express.static("uploads"));
 
@@ -106,7 +137,7 @@ app.post("/upload", requireUploadAuth, upload.single("pdf"), (req, res) => {
     return res.status(400).type("text/plain").send("Upload rejected: not a valid PDF file.");
   }
 
-  const newPath = path.join(__dirname, "uploads", req.file.filename + ".pdf");
+  const newPath = path.join(UPLOADS_DIR, req.file.filename + ".pdf");
   fs.renameSync(oldPath, newPath);
 
   // Direct URL to the uploaded PDF
