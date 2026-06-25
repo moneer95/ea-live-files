@@ -156,7 +156,15 @@ async function getPdfOverview(uploadsDir, entry) {
   return overview;
 }
 
-function toFileRecord(entry, overview) {
+function buildFileUrls(baseUrl, name) {
+  const fileUrl = baseUrl + "/uploads/" + name;
+  return {
+    viewUrl: baseUrl + "/pdfjs/web/viewer.html?file=" + encodeURIComponent(fileUrl),
+    downloadUrl: fileUrl,
+  };
+}
+
+function toFileRecord(entry, overview, baseUrl) {
   return {
     name: entry.name,
     size: entry.size,
@@ -164,16 +172,28 @@ function toFileRecord(entry, overview) {
     modified: entry.modified,
     pages: overview.pages,
     preview: overview.preview,
-    viewUrl: "/view/" + encodeURIComponent(entry.name),
-    downloadUrl: "/download/" + encodeURIComponent(entry.name),
+    ...buildFileUrls(baseUrl, entry.name),
   };
 }
 
 function toIndexRecord(entry, overview) {
   return {
-    ...toFileRecord(entry, overview),
+    name: entry.name,
+    size: entry.size,
+    sizeLabel: formatBytes(entry.size),
+    modified: entry.modified,
     mtimeMs: entry.mtimeMs,
+    pages: overview.pages,
+    preview: overview.preview,
     content: overview.content || "",
+  };
+}
+
+function withFileUrls(record, baseUrl) {
+  const { content, mtimeMs, ...file } = record;
+  return {
+    ...file,
+    ...buildFileUrls(baseUrl, record.name),
   };
 }
 
@@ -290,17 +310,14 @@ function getSearchIndexStatus() {
   };
 }
 
-function paginateRecords(records, page, pageSize) {
+function paginateRecords(records, page, pageSize, baseUrl) {
   const total = records.length;
   const totalPages = total ? Math.ceil(total / pageSize) : 0;
   const safePage = totalPages ? Math.min(page, totalPages) : 1;
   const start = (safePage - 1) * pageSize;
 
   return {
-    files: records.slice(start, start + pageSize).map((record) => {
-      const { content, mtimeMs, ...file } = record;
-      return file;
-    }),
+    files: records.slice(start, start + pageSize).map((record) => withFileUrls(record, baseUrl)),
     pagination: {
       page: safePage,
       pageSize,
@@ -321,6 +338,7 @@ function matchesIndexedRecord(record, query) {
 
 async function listUploadFilesPaginated(uploadsDir, options = {}) {
   const { page, pageSize, query } = parsePaginationOptions(options);
+  const baseUrl = options.baseUrl || "";
   const entries = getUploadEntries(uploadsDir);
 
   if (!entries.length) {
@@ -338,7 +356,9 @@ async function listUploadFilesPaginated(uploadsDir, options = {}) {
     const start = (safePage - 1) * pageSize;
     const slice = entries.slice(start, start + pageSize);
     const files = await Promise.all(
-      slice.map(async (entry) => toFileRecord(entry, await getPdfOverview(uploadsDir, entry)))
+      slice.map(async (entry) =>
+        toFileRecord(entry, await getPdfOverview(uploadsDir, entry), baseUrl)
+      )
     );
 
     return {
@@ -359,16 +379,12 @@ async function listUploadFilesPaginated(uploadsDir, options = {}) {
   if (!searchIndexState.ready) {
     const quickMatches = await Promise.all(
       filenameMatches.map(async (entry) =>
-        toFileRecord(entry, await getPdfOverview(uploadsDir, entry))
+        toIndexRecord(entry, await getPdfOverview(uploadsDir, entry))
       )
     );
 
     return {
-      ...paginateRecords(
-        quickMatches.map((file) => ({ ...file, content: "" })),
-        page,
-        pageSize
-      ),
+      ...paginateRecords(quickMatches, page, pageSize, baseUrl),
       indexing: true,
       index: getSearchIndexStatus(),
       partial: true,
@@ -397,7 +413,7 @@ async function listUploadFilesPaginated(uploadsDir, options = {}) {
     .filter(Boolean);
 
   return {
-    ...paginateRecords(orderedMatches, page, pageSize),
+    ...paginateRecords(orderedMatches, page, pageSize, baseUrl),
     indexing: searchIndexState.indexing,
     index: getSearchIndexStatus(),
     partial: false,
@@ -417,5 +433,6 @@ module.exports = {
   getSearchIndexStatus,
   safePdfFilename,
   formatBytes,
+  buildFileUrls,
   DEFAULT_PAGE_SIZE,
 };

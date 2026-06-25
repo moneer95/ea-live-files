@@ -341,8 +341,8 @@
                 "<p class=\"file-meta\">" + escapeHtml(meta) + "</p>" +
               "</div>" +
               "<div class=\"file-actions\">" +
-                "<a class=\"btn btn-secondary\" href=\"" + escapeAttr(file.viewUrl) + "\">View</a>" +
-                "<a class=\"btn btn-primary\" href=\"" + escapeAttr(file.downloadUrl) + "\" download>Download</a>" +
+                "<a class=\"btn btn-secondary\" href=\"" + escapeAttr(file.viewUrl) + "\" target=\"_blank\" rel=\"noopener\">View</a>" +
+                "<a class=\"btn btn-primary\" href=\"" + escapeAttr(file.downloadUrl) + "\" target=\"_blank\" rel=\"noopener\">Download</a>" +
               "</div>" +
             "</div>" +
             "<p class=\"preview\">" + escapeHtml(file.preview) + "</p>" +

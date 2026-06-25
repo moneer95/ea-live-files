@@ -55,6 +55,17 @@ function safeNext(n) {
   return n;
 }
 
+function getBaseUrl(req) {
+  const fromEnv = process.env.PUBLIC_BASE_URL;
+  if (fromEnv) return fromEnv.replace(/\/$/, "");
+
+  const forwardedProto = req.get("x-forwarded-proto");
+  const protocol =
+    forwardedProto ||
+    (req.secure ? "https" : "http");
+  return protocol + "://" + req.get("host");
+}
+
 function requireUploadAuth(req, res, next) {
   if (req.session && req.session.uploadAuth === true) return next();
   const nextUrl =
@@ -108,6 +119,7 @@ app.get("/api/files", requireUploadAuth, async (req, res) => {
       page: req.query.page,
       pageSize: req.query.limit || req.query.pageSize || DEFAULT_PAGE_SIZE,
       query: req.query.q || req.query.query || "",
+      baseUrl: getBaseUrl(req),
     });
     res.json(result);
   } catch (err) {
