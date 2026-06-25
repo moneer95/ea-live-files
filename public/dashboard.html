@@ -168,6 +168,15 @@
       color: #52525b;
       padding: 0 0.5rem;
     }
+    .index-notice {
+      margin: 0 0 1rem;
+      padding: 0.75rem 0.9rem;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 8px;
+      color: #1d4ed8;
+      font-size: 0.875rem;
+    }
   </style>
 </head>
 <body>
@@ -191,6 +200,7 @@
         >
       </div>
       <p id="summary" class="summary">Loading files…</p>
+      <p id="indexNotice" class="index-notice" hidden></p>
     </div>
     <div id="content" class="loading">Loading files…</div>
     <div id="pagination" class="pagination" hidden></div>
@@ -202,7 +212,9 @@
     var currentQuery = "";
     var paginationMeta = { total: 0, totalPages: 0 };
     var searchTimer = null;
+    var indexPollTimer = null;
     var loadRequestId = 0;
+    var indexStatus = { ready: false, indexing: false, done: 0, total: 0 };
 
     function formatDate(iso) {
       return new Date(iso).toLocaleString(undefined, {
@@ -230,9 +242,74 @@
       document.getElementById("pagination").hidden = true;
     }
 
-    function updateSummary() {
+    function updateIndexNotice(data) {
+      var notice = document.getElementById("indexNotice");
+      var status = (data && data.index) || indexStatus;
+      var isIndexing = Boolean(data && data.indexing) || status.indexing || (currentQuery && !status.ready);
+
+      if (!isIndexing) {
+        notice.hidden = true;
+        notice.textContent = "";
+        return;
+      }
+
+      notice.hidden = false;
+      if (status.total) {
+        notice.textContent =
+          "Indexing PDF text for search (" + status.done + " / " + status.total + "). " +
+          (data && data.partial
+            ? "Showing filename matches until indexing finishes."
+            : "Results will update automatically when ready.");
+      } else {
+        notice.textContent = "Preparing PDF text index for search…";
+      }
+    }
+
+    function clearIndexPoll() {
+      if (indexPollTimer) {
+        clearTimeout(indexPollTimer);
+        indexPollTimer = null;
+      }
+    }
+
+    function scheduleIndexPoll() {
+      clearIndexPoll();
+      indexPollTimer = setTimeout(function () {
+        fetch("/api/files/index-status")
+          .then(function (res) {
+            if (!res.ok) throw new Error("Could not load index status.");
+            return res.json();
+          })
+          .then(function (status) {
+            indexStatus = status;
+            updateIndexNotice({ index: status, indexing: status.indexing || !status.ready, partial: true });
+
+            if (currentQuery && (status.indexing || !status.ready)) {
+              scheduleIndexPoll();
+              return;
+            }
+
+            clearIndexPoll();
+            if (currentQuery && status.ready) {
+              loadFiles();
+            }
+          })
+          .catch(function () {
+            scheduleIndexPoll();
+          });
+      }, 2000);
+    }
+
+    function updateSummary(data) {
       var summary = document.getElementById("summary");
       var total = paginationMeta.total || 0;
+      var status = (data && data.index) || indexStatus;
+      var isIndexing = Boolean(data && data.indexing) || status.indexing || (currentQuery && !status.ready);
+
+      if (isIndexing && currentQuery && !total) {
+        summary.textContent = "Preparing search index…";
+        return;
+      }
 
       if (!total) {
         summary.textContent = currentQuery
@@ -307,15 +384,20 @@
       });
     }
 
-    function renderFiles(files) {
+    function renderFiles(files, data) {
       var content = document.getElementById("content");
-      updateSummary();
+      updateSummary(data);
+      updateIndexNotice(data);
+
+      var isIndexing = Boolean(data && (data.indexing || data.partial)) && currentQuery && !(data.index && data.index.ready);
 
       if (!paginationMeta.total) {
-        content.className = "empty";
-        content.innerHTML = currentQuery
-          ? "<p>No PDFs match your search. Try different words from the document text.</p>"
-          : "<p>No files found. <a href=\"/\">Upload a PDF</a> to get started.</p>";
+        content.className = isIndexing ? "loading" : "empty";
+        content.innerHTML = isIndexing
+          ? "<p>PDF text is being indexed so content search can run quickly. This happens once in the background.</p>"
+          : (currentQuery
+            ? "<p>No PDFs match your search. Try different words from the document text.</p>"
+            : "<p>No files found. <a href=\"/\">Upload a PDF</a> to get started.</p>");
         document.getElementById("pagination").hidden = true;
         return;
       }
@@ -347,11 +429,20 @@
 
           paginationMeta = data.pagination || { total: 0, totalPages: 0 };
           currentPage = paginationMeta.page || currentPage;
+          if (data.index) {
+            indexStatus = data.index;
+          }
 
           var filterInput = document.getElementById("contentFilter");
           filterInput.disabled = false;
 
-          renderFiles(data.files || []);
+          renderFiles(data.files || [], data);
+
+          if (currentQuery && (data.indexing || data.partial || !indexStatus.ready)) {
+            scheduleIndexPoll();
+          } else {
+            clearIndexPoll();
+          }
         })
         .catch(function () {
           if (requestId !== loadRequestId) return;

@@ -8,6 +8,9 @@ const cookieSession = require("cookie-session");
 const { isPdfFileSync } = require("./pdf-validate");
 const {
   listUploadFilesPaginated,
+  warmSearchIndex,
+  queueSearchIndexRefresh,
+  getSearchIndexStatus,
   safePdfFilename,
   DEFAULT_PAGE_SIZE,
 } = require("./uploads-list");
@@ -95,6 +98,10 @@ app.get("/dashboard", requireUploadAuth, (req, res) => {
   res.sendFile(path.join(__dirname, "public", "dashboard.html"));
 });
 
+app.get("/api/files/index-status", requireUploadAuth, (req, res) => {
+  res.json(getSearchIndexStatus());
+});
+
 app.get("/api/files", requireUploadAuth, async (req, res) => {
   try {
     const result = await listUploadFilesPaginated(UPLOADS_DIR, {
@@ -147,6 +154,7 @@ app.post("/upload", requireUploadAuth, upload.single("pdf"), (req, res) => {
 
   const newPath = path.join(UPLOADS_DIR, req.file.filename + ".pdf");
   fs.renameSync(oldPath, newPath);
+  queueSearchIndexRefresh(UPLOADS_DIR);
 
   // Direct URL to the uploaded PDF
   const fileUrl = `https://${req.get("host")}/uploads/${req.file.filename}.pdf`;
@@ -259,4 +267,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 
 app.listen(PORT, HOST, () => {
   console.log(`✅ Server listening on http://${HOST}:${PORT}`);
+  warmSearchIndex(UPLOADS_DIR).catch((err) => {
+    console.error("Failed to build initial PDF search index:", err);
+  });
 });

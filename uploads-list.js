@@ -6,8 +6,16 @@ const { isPdfFileSync } = require("./pdf-validate");
 const PREVIEW_MAX_CHARS = 320;
 const DEFAULT_PAGE_SIZE = 10;
 const MAX_PAGE_SIZE = 50;
+const INDEX_CONCURRENCY = 4;
 
-const textCache = new Map();
+const memoryCache = new Map();
+const searchIndexState = {
+  entries: [],
+  ready: false,
+  indexing: false,
+  done: 0,
+  total: 0,
+};
 
 function formatBytes(bytes) {
   if (bytes < 1024) return bytes + " B";
@@ -27,6 +35,25 @@ function parsePaginationOptions(options = {}) {
   );
   const query = typeof options.query === "string" ? options.query.trim().toLowerCase() : "";
   return { page, pageSize, query };
+}
+
+function getCacheDir(uploadsDir) {
+  return path.join(uploadsDir, ".text-cache");
+}
+
+function getIndexPath(uploadsDir) {
+  return path.join(getCacheDir(uploadsDir), "search-index.json");
+}
+
+function getEntryCachePath(uploadsDir, name) {
+  return path.join(getCacheDir(uploadsDir), name + ".json");
+}
+
+function ensureCacheDir(uploadsDir) {
+  const cacheDir = getCacheDir(uploadsDir);
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
 }
 
 function getUploadEntries(uploadsDir) {
@@ -61,33 +88,71 @@ function getUploadEntries(uploadsDir) {
   return entries;
 }
 
-async function getPdfOverview(filePath, cacheKey) {
-  if (cacheKey && textCache.has(cacheKey)) {
-    return textCache.get(cacheKey);
+function readEntryCache(uploadsDir, entry) {
+  const cacheKey = entry.name + ":" + entry.mtimeMs;
+  if (memoryCache.has(cacheKey)) {
+    return memoryCache.get(cacheKey);
   }
 
-  let overview;
+  const cachePath = getEntryCachePath(uploadsDir, entry.name);
+  if (!fs.existsSync(cachePath)) return null;
+
+  try {
+    const cached = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    if (cached.mtimeMs !== entry.mtimeMs) return null;
+    memoryCache.set(cacheKey, cached);
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+function writeEntryCache(uploadsDir, entry, overview) {
+  ensureCacheDir(uploadsDir);
+  const cacheKey = entry.name + ":" + entry.mtimeMs;
+  const payload = {
+    name: entry.name,
+    mtimeMs: entry.mtimeMs,
+    pages: overview.pages,
+    content: overview.content,
+    preview: overview.preview,
+  };
+  memoryCache.set(cacheKey, payload);
+  fs.writeFileSync(getEntryCachePath(uploadsDir, entry.name), JSON.stringify(payload));
+  return payload;
+}
+
+async function parsePdfOverview(filePath) {
   try {
     const buffer = fs.readFileSync(filePath);
     const result = await pdf(buffer);
     const content = normalizeText(result.text || "");
-    overview = {
+    return {
       pages: result.numpages || null,
       content,
       preview: content.slice(0, PREVIEW_MAX_CHARS) || "(No extractable text in this PDF)",
     };
   } catch {
-    overview = {
+    return {
       pages: null,
       content: "",
       preview: "(Could not read PDF content preview)",
     };
   }
+}
 
-  if (cacheKey) {
-    textCache.set(cacheKey, overview);
+async function getPdfOverview(uploadsDir, entry) {
+  const cached = readEntryCache(uploadsDir, entry);
+  if (cached) {
+    return {
+      pages: cached.pages,
+      content: cached.content || "",
+      preview: cached.preview,
+    };
   }
 
+  const overview = await parsePdfOverview(entry.filePath);
+  writeEntryCache(uploadsDir, entry, overview);
   return overview;
 }
 
@@ -104,16 +169,154 @@ function toFileRecord(entry, overview) {
   };
 }
 
-async function buildFileRecord(entry) {
-  const cacheKey = entry.name + ":" + entry.mtimeMs;
-  const overview = await getPdfOverview(entry.filePath, cacheKey);
-  return toFileRecord(entry, overview);
+function toIndexRecord(entry, overview) {
+  return {
+    ...toFileRecord(entry, overview),
+    mtimeMs: entry.mtimeMs,
+    content: overview.content || "",
+  };
 }
 
-function matchesQuery(entry, overview, query) {
-  if (!query) return true;
-  if (entry.name.toLowerCase().includes(query)) return true;
-  return (overview.content || "").toLowerCase().includes(query);
+async function mapPool(items, limit, worker) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex++;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    () => runWorker()
+  );
+  await Promise.all(workers);
+  return results;
+}
+
+function loadSearchIndexFromDisk(uploadsDir) {
+  const indexPath = getIndexPath(uploadsDir);
+  if (!fs.existsSync(indexPath)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+    if (!Array.isArray(parsed.entries)) return null;
+    return parsed.entries;
+  } catch {
+    return null;
+  }
+}
+
+function saveSearchIndexToDisk(uploadsDir, entries) {
+  ensureCacheDir(uploadsDir);
+  fs.writeFileSync(
+    getIndexPath(uploadsDir),
+    JSON.stringify({ updatedAt: new Date().toISOString(), entries })
+  );
+}
+
+function isIndexFresh(entries, indexedEntries) {
+  if (entries.length !== indexedEntries.length) return false;
+  const indexedByName = new Map(indexedEntries.map((entry) => [entry.name, entry.mtimeMs]));
+  return entries.every((entry) => indexedByName.get(entry.name) === entry.mtimeMs);
+}
+
+async function buildSearchIndex(uploadsDir) {
+  const entries = getUploadEntries(uploadsDir);
+  searchIndexState.total = entries.length;
+  searchIndexState.done = 0;
+
+  if (!entries.length) {
+    searchIndexState.entries = [];
+    searchIndexState.ready = true;
+    saveSearchIndexToDisk(uploadsDir, []);
+    return;
+  }
+
+  const indexed = await mapPool(entries, INDEX_CONCURRENCY, async (entry) => {
+    const overview = await getPdfOverview(uploadsDir, entry);
+    searchIndexState.done += 1;
+    return toIndexRecord(entry, overview);
+  });
+
+  searchIndexState.entries = indexed;
+  searchIndexState.ready = true;
+  saveSearchIndexToDisk(uploadsDir, indexed);
+}
+
+async function warmSearchIndex(uploadsDir) {
+  if (searchIndexState.indexing) return;
+
+  searchIndexState.indexing = true;
+  searchIndexState.ready = false;
+
+  try {
+    const entries = getUploadEntries(uploadsDir);
+    searchIndexState.total = entries.length;
+    searchIndexState.done = 0;
+
+    const diskIndex = loadSearchIndexFromDisk(uploadsDir);
+    if (diskIndex && isIndexFresh(entries, diskIndex)) {
+      searchIndexState.entries = diskIndex;
+      searchIndexState.done = entries.length;
+      searchIndexState.ready = true;
+      return;
+    }
+
+    await buildSearchIndex(uploadsDir);
+  } catch (err) {
+    console.error("Failed to warm PDF search index:", err);
+  } finally {
+    searchIndexState.indexing = false;
+  }
+}
+
+function queueSearchIndexRefresh(uploadsDir) {
+  setImmediate(() => {
+    warmSearchIndex(uploadsDir).catch((err) => {
+      console.error("Failed to refresh PDF search index:", err);
+    });
+  });
+}
+
+function getSearchIndexStatus() {
+  return {
+    ready: searchIndexState.ready,
+    indexing: searchIndexState.indexing,
+    done: searchIndexState.done,
+    total: searchIndexState.total,
+  };
+}
+
+function paginateRecords(records, page, pageSize) {
+  const total = records.length;
+  const totalPages = total ? Math.ceil(total / pageSize) : 0;
+  const safePage = totalPages ? Math.min(page, totalPages) : 1;
+  const start = (safePage - 1) * pageSize;
+
+  return {
+    files: records.slice(start, start + pageSize).map((record) => {
+      const { content, mtimeMs, ...file } = record;
+      return file;
+    }),
+    pagination: {
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+    },
+  };
+}
+
+function matchesFilename(entry, query) {
+  return entry.name.toLowerCase().includes(query);
+}
+
+function matchesIndexedRecord(record, query) {
+  if (record.name.toLowerCase().includes(query)) return true;
+  return (record.content || "").toLowerCase().includes(query);
 }
 
 async function listUploadFilesPaginated(uploadsDir, options = {}) {
@@ -124,6 +327,7 @@ async function listUploadFilesPaginated(uploadsDir, options = {}) {
     return {
       files: [],
       pagination: { page: 1, pageSize, total: 0, totalPages: 0 },
+      indexing: false,
     };
   }
 
@@ -133,7 +337,9 @@ async function listUploadFilesPaginated(uploadsDir, options = {}) {
     const safePage = Math.min(page, totalPages);
     const start = (safePage - 1) * pageSize;
     const slice = entries.slice(start, start + pageSize);
-    const files = await Promise.all(slice.map((entry) => buildFileRecord(entry)));
+    const files = await Promise.all(
+      slice.map(async (entry) => toFileRecord(entry, await getPdfOverview(uploadsDir, entry)))
+    );
 
     return {
       files,
@@ -143,31 +349,58 @@ async function listUploadFilesPaginated(uploadsDir, options = {}) {
         total,
         totalPages,
       },
+      indexing: searchIndexState.indexing,
+      index: getSearchIndexStatus(),
     };
   }
 
-  const matches = [];
-  for (const entry of entries) {
-    const cacheKey = entry.name + ":" + entry.mtimeMs;
-    const overview = await getPdfOverview(entry.filePath, cacheKey);
-    if (matchesQuery(entry, overview, query)) {
-      matches.push(toFileRecord(entry, overview));
+  const filenameMatches = entries.filter((entry) => matchesFilename(entry, query));
+
+  if (!searchIndexState.ready) {
+    const quickMatches = await Promise.all(
+      filenameMatches.map(async (entry) =>
+        toFileRecord(entry, await getPdfOverview(uploadsDir, entry))
+      )
+    );
+
+    return {
+      ...paginateRecords(
+        quickMatches.map((file) => ({ ...file, content: "" })),
+        page,
+        pageSize
+      ),
+      indexing: true,
+      index: getSearchIndexStatus(),
+      partial: true,
+    };
+  }
+
+  const indexedMatches = searchIndexState.entries.filter((record) =>
+    matchesIndexedRecord(record, query)
+  );
+
+  const merged = new Map();
+  for (const record of indexedMatches) {
+    merged.set(record.name, record);
+  }
+  for (const entry of filenameMatches) {
+    if (!merged.has(entry.name)) {
+      merged.set(
+        entry.name,
+        toIndexRecord(entry, await getPdfOverview(uploadsDir, entry))
+      );
     }
   }
 
-  const total = matches.length;
-  const totalPages = total ? Math.ceil(total / pageSize) : 0;
-  const safePage = totalPages ? Math.min(page, totalPages) : 1;
-  const start = (safePage - 1) * pageSize;
+  const orderedMatches = entries
+    .map((entry) => merged.get(entry.name))
+    .filter(Boolean);
 
   return {
-    files: matches.slice(start, start + pageSize),
-    pagination: {
-      page: safePage,
-      pageSize,
-      total,
-      totalPages,
-    },
+    ...paginateRecords(orderedMatches, page, pageSize),
+    indexing: searchIndexState.indexing,
+    index: getSearchIndexStatus(),
+    partial: false,
   };
 }
 
@@ -179,6 +412,9 @@ function safePdfFilename(filename) {
 
 module.exports = {
   listUploadFilesPaginated,
+  warmSearchIndex,
+  queueSearchIndexRefresh,
+  getSearchIndexStatus,
   safePdfFilename,
   formatBytes,
   DEFAULT_PAGE_SIZE,
