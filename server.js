@@ -6,7 +6,11 @@ const path = require("path");
 const fs = require("fs");
 const cookieSession = require("cookie-session");
 const { isPdfFileSync } = require("./pdf-validate");
-const { listUploadFiles, safePdfFilename } = require("./uploads-list");
+const {
+  listUploadFilesPaginated,
+  safePdfFilename,
+  DEFAULT_PAGE_SIZE,
+} = require("./uploads-list");
 
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 
@@ -93,8 +97,12 @@ app.get("/dashboard", requireUploadAuth, (req, res) => {
 
 app.get("/api/files", requireUploadAuth, async (req, res) => {
   try {
-    const files = await listUploadFiles(UPLOADS_DIR);
-    res.json({ files });
+    const result = await listUploadFilesPaginated(UPLOADS_DIR, {
+      page: req.query.page,
+      pageSize: req.query.limit || req.query.pageSize || DEFAULT_PAGE_SIZE,
+      query: req.query.q || req.query.query || "",
+    });
+    res.json(result);
   } catch (err) {
     console.error("Failed to list uploads:", err);
     res.status(500).json({ error: "Failed to list files." });

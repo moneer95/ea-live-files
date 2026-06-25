@@ -4,6 +4,10 @@ const pdf = require("pdf-parse");
 const { isPdfFileSync } = require("./pdf-validate");
 
 const PREVIEW_MAX_CHARS = 320;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 50;
+
+const textCache = new Map();
 
 function formatBytes(bytes) {
   if (bytes < 1024) return bytes + " B";
@@ -15,42 +19,26 @@ function normalizeText(text) {
   return text.replace(/\s+/g, " ").trim();
 }
 
-async function getPdfOverview(filePath) {
-  try {
-    const buffer = fs.readFileSync(filePath);
-    const result = await pdf(buffer);
-    const content = normalizeText(result.text || "");
-    return {
-      pages: result.numpages || null,
-      content,
-      preview: content.slice(0, PREVIEW_MAX_CHARS) || "(No extractable text in this PDF)",
-    };
-  } catch {
-    return {
-      pages: null,
-      content: "",
-      preview: "(Could not read PDF content preview)",
-    };
-  }
+function parsePaginationOptions(options = {}) {
+  const page = Math.max(1, Number.parseInt(options.page, 10) || 1);
+  const pageSize = Math.min(
+    MAX_PAGE_SIZE,
+    Math.max(1, Number.parseInt(options.pageSize, 10) || DEFAULT_PAGE_SIZE)
+  );
+  const query = typeof options.query === "string" ? options.query.trim().toLowerCase() : "";
+  return { page, pageSize, query };
 }
 
-async function listUploadFiles(uploadsDir) {
+function getUploadEntries(uploadsDir) {
   if (!fs.existsSync(uploadsDir)) {
     return [];
   }
 
-  const names = fs
-    .readdirSync(uploadsDir)
-    .filter((name) => name.endsWith(".pdf"))
-    .sort((a, b) => {
-      const aStat = fs.statSync(path.join(uploadsDir, a));
-      const bStat = fs.statSync(path.join(uploadsDir, b));
-      return bStat.mtimeMs - aStat.mtimeMs;
-    });
+  const entries = [];
 
-  const files = [];
+  for (const name of fs.readdirSync(uploadsDir)) {
+    if (!name.endsWith(".pdf")) continue;
 
-  for (const name of names) {
     const filePath = path.join(uploadsDir, name);
     let stat;
     try {
@@ -60,21 +48,127 @@ async function listUploadFiles(uploadsDir) {
     }
     if (!stat.isFile() || !isPdfFileSync(filePath)) continue;
 
-    const overview = await getPdfOverview(filePath);
-    files.push({
+    entries.push({
       name,
+      filePath,
       size: stat.size,
-      sizeLabel: formatBytes(stat.size),
       modified: stat.mtime.toISOString(),
-      pages: overview.pages,
-      content: overview.content,
-      preview: overview.preview,
-      viewUrl: "/view/" + encodeURIComponent(name),
-      downloadUrl: "/download/" + encodeURIComponent(name),
+      mtimeMs: stat.mtimeMs,
     });
   }
 
-  return files;
+  entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return entries;
+}
+
+async function getPdfOverview(filePath, cacheKey) {
+  if (cacheKey && textCache.has(cacheKey)) {
+    return textCache.get(cacheKey);
+  }
+
+  let overview;
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const result = await pdf(buffer);
+    const content = normalizeText(result.text || "");
+    overview = {
+      pages: result.numpages || null,
+      content,
+      preview: content.slice(0, PREVIEW_MAX_CHARS) || "(No extractable text in this PDF)",
+    };
+  } catch {
+    overview = {
+      pages: null,
+      content: "",
+      preview: "(Could not read PDF content preview)",
+    };
+  }
+
+  if (cacheKey) {
+    textCache.set(cacheKey, overview);
+  }
+
+  return overview;
+}
+
+function toFileRecord(entry, overview) {
+  return {
+    name: entry.name,
+    size: entry.size,
+    sizeLabel: formatBytes(entry.size),
+    modified: entry.modified,
+    pages: overview.pages,
+    preview: overview.preview,
+    viewUrl: "/view/" + encodeURIComponent(entry.name),
+    downloadUrl: "/download/" + encodeURIComponent(entry.name),
+  };
+}
+
+async function buildFileRecord(entry) {
+  const cacheKey = entry.name + ":" + entry.mtimeMs;
+  const overview = await getPdfOverview(entry.filePath, cacheKey);
+  return toFileRecord(entry, overview);
+}
+
+function matchesQuery(entry, overview, query) {
+  if (!query) return true;
+  if (entry.name.toLowerCase().includes(query)) return true;
+  return (overview.content || "").toLowerCase().includes(query);
+}
+
+async function listUploadFilesPaginated(uploadsDir, options = {}) {
+  const { page, pageSize, query } = parsePaginationOptions(options);
+  const entries = getUploadEntries(uploadsDir);
+
+  if (!entries.length) {
+    return {
+      files: [],
+      pagination: { page: 1, pageSize, total: 0, totalPages: 0 },
+    };
+  }
+
+  if (!query) {
+    const total = entries.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * pageSize;
+    const slice = entries.slice(start, start + pageSize);
+    const files = await Promise.all(slice.map((entry) => buildFileRecord(entry)));
+
+    return {
+      files,
+      pagination: {
+        page: safePage,
+        pageSize,
+        total,
+        totalPages,
+      },
+    };
+  }
+
+  const matches = [];
+  for (const entry of entries) {
+    const cacheKey = entry.name + ":" + entry.mtimeMs;
+    const overview = await getPdfOverview(entry.filePath, cacheKey);
+    if (matchesQuery(entry, overview, query)) {
+      matches.push(toFileRecord(entry, overview));
+    }
+  }
+
+  const total = matches.length;
+  const totalPages = total ? Math.ceil(total / pageSize) : 0;
+  const safePage = totalPages ? Math.min(page, totalPages) : 1;
+  const start = (safePage - 1) * pageSize;
+
+  return {
+    files: matches.slice(start, start + pageSize),
+    pagination: {
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+    },
+  };
 }
 
 function safePdfFilename(filename) {
@@ -83,4 +177,9 @@ function safePdfFilename(filename) {
   return base;
 }
 
-module.exports = { listUploadFiles, safePdfFilename, formatBytes };
+module.exports = {
+  listUploadFilesPaginated,
+  safePdfFilename,
+  formatBytes,
+  DEFAULT_PAGE_SIZE,
+};

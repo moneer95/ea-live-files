@@ -151,6 +151,23 @@
       color: #52525b;
     }
     .error { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .pagination .btn[disabled] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .page-info {
+      font-size: 0.875rem;
+      color: #52525b;
+      padding: 0 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -176,10 +193,16 @@
       <p id="summary" class="summary">Loading files…</p>
     </div>
     <div id="content" class="loading">Loading files…</div>
+    <div id="pagination" class="pagination" hidden></div>
   </main>
 
   <script>
-    var allFiles = [];
+    var PAGE_SIZE = 10;
+    var currentPage = 1;
+    var currentQuery = "";
+    var paginationMeta = { total: 0, totalPages: 0 };
+    var searchTimer = null;
+    var loadRequestId = 0;
 
     function formatDate(iso) {
       return new Date(iso).toLocaleString(undefined, {
@@ -200,35 +223,32 @@
       return escapeHtml(value).replace(/'/g, "&#39;");
     }
 
-    function matchesContentFilter(file, query) {
-      if (!query) return true;
-      var haystack = ((file.content || "") + " " + (file.preview || "") + " " + (file.name || "")).toLowerCase();
-      return haystack.indexOf(query) !== -1;
+    function setLoadingState(message) {
+      var content = document.getElementById("content");
+      content.className = "loading";
+      content.textContent = message || "Loading files…";
+      document.getElementById("pagination").hidden = true;
     }
 
-    function getFilteredFiles() {
-      var query = document.getElementById("contentFilter").value.trim().toLowerCase();
-      return allFiles.filter(function (file) {
-        return matchesContentFilter(file, query);
-      });
-    }
-
-    function updateSummary(visibleCount, totalCount, query) {
+    function updateSummary() {
       var summary = document.getElementById("summary");
+      var total = paginationMeta.total || 0;
 
-      if (!totalCount) {
-        summary.textContent = "No PDF files uploaded yet.";
+      if (!total) {
+        summary.textContent = currentQuery
+          ? "No PDFs match \"" + currentQuery + "\"."
+          : "No PDF files uploaded yet.";
         return;
       }
 
-      if (!query) {
-        summary.textContent = totalCount + " file" + (totalCount === 1 ? "" : "s") + " available";
+      if (currentQuery) {
+        summary.textContent =
+          total + " file" + (total === 1 ? "" : "s") +
+          " match \"" + currentQuery + "\"";
         return;
       }
 
-      summary.textContent =
-        visibleCount + " of " + totalCount + " file" + (totalCount === 1 ? "" : "s") +
-        " match \"" + query + "\"";
+      summary.textContent = total + " file" + (total === 1 ? "" : "s") + " available";
     }
 
     function renderFileCards(files) {
@@ -254,48 +274,106 @@
       }).join("");
     }
 
-    function renderDashboard() {
-      var content = document.getElementById("content");
-      var query = document.getElementById("contentFilter").value.trim().toLowerCase();
-      var files = getFilteredFiles();
+    function renderPagination() {
+      var paginationEl = document.getElementById("pagination");
+      var totalPages = paginationMeta.totalPages || 0;
 
-      updateSummary(files.length, allFiles.length, query);
-
-      if (!allFiles.length) {
-        content.className = "empty";
-        content.innerHTML = "<p>No files found. <a href=\"/\">Upload a PDF</a> to get started.</p>";
+      if (totalPages <= 1) {
+        paginationEl.hidden = true;
+        paginationEl.innerHTML = "";
         return;
       }
 
-      if (!files.length) {
+      paginationEl.hidden = false;
+      paginationEl.innerHTML =
+        "<button type=\"button\" class=\"btn btn-secondary\" id=\"prevPage\"" +
+          (currentPage <= 1 ? " disabled" : "") + ">Previous</button>" +
+        "<span class=\"page-info\">Page " + currentPage + " of " + totalPages + "</span>" +
+        "<button type=\"button\" class=\"btn btn-secondary\" id=\"nextPage\"" +
+          (currentPage >= totalPages ? " disabled" : "") + ">Next</button>";
+
+      document.getElementById("prevPage").addEventListener("click", function () {
+        if (currentPage > 1) {
+          currentPage -= 1;
+          loadFiles();
+        }
+      });
+
+      document.getElementById("nextPage").addEventListener("click", function () {
+        if (currentPage < totalPages) {
+          currentPage += 1;
+          loadFiles();
+        }
+      });
+    }
+
+    function renderFiles(files) {
+      var content = document.getElementById("content");
+      updateSummary();
+
+      if (!paginationMeta.total) {
         content.className = "empty";
-        content.innerHTML = "<p>No PDFs match your search. Try different words from the document text.</p>";
+        content.innerHTML = currentQuery
+          ? "<p>No PDFs match your search. Try different words from the document text.</p>"
+          : "<p>No files found. <a href=\"/\">Upload a PDF</a> to get started.</p>";
+        document.getElementById("pagination").hidden = true;
         return;
       }
 
       content.className = "file-list";
       content.innerHTML = renderFileCards(files);
+      renderPagination();
     }
 
-    document.getElementById("contentFilter").addEventListener("input", renderDashboard);
+    function loadFiles() {
+      var requestId = ++loadRequestId;
+      setLoadingState(currentQuery ? "Searching files…" : "Loading files…");
 
-    fetch("/api/files")
-      .then(function (res) {
-        if (!res.ok) throw new Error("Could not load files.");
-        return res.json();
-      })
-      .then(function (data) {
-        allFiles = data.files || [];
-        var filterInput = document.getElementById("contentFilter");
-        filterInput.disabled = !allFiles.length;
-        renderDashboard();
-      })
-      .catch(function () {
-        document.getElementById("summary").textContent = "";
-        var content = document.getElementById("content");
-        content.className = "error";
-        content.textContent = "Failed to load the file list. Please refresh the page.";
+      var params = new URLSearchParams({
+        page: String(currentPage),
+        limit: String(PAGE_SIZE),
       });
+      if (currentQuery) {
+        params.set("q", currentQuery);
+      }
+
+      fetch("/api/files?" + params.toString())
+        .then(function (res) {
+          if (!res.ok) throw new Error("Could not load files.");
+          return res.json();
+        })
+        .then(function (data) {
+          if (requestId !== loadRequestId) return;
+
+          paginationMeta = data.pagination || { total: 0, totalPages: 0 };
+          currentPage = paginationMeta.page || currentPage;
+
+          var filterInput = document.getElementById("contentFilter");
+          filterInput.disabled = false;
+
+          renderFiles(data.files || []);
+        })
+        .catch(function () {
+          if (requestId !== loadRequestId) return;
+          document.getElementById("summary").textContent = "";
+          var content = document.getElementById("content");
+          content.className = "error";
+          content.textContent = "Failed to load the file list. Please refresh the page.";
+          document.getElementById("pagination").hidden = true;
+        });
+    }
+
+    document.getElementById("contentFilter").addEventListener("input", function (event) {
+      var nextQuery = event.target.value.trim();
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () {
+        currentQuery = nextQuery;
+        currentPage = 1;
+        loadFiles();
+      }, 350);
+    });
+
+    loadFiles();
   </script>
 </body>
 </html>
