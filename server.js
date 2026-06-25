@@ -128,7 +128,7 @@ app.get("/api/files", requireUploadAuth, async (req, res) => {
   }
 });
 
-app.get("/download/:filename", (req, res) => {
+app.get("/download/:filename", requireUploadAuth, (req, res) => {
   const filename = safePdfFilename(req.params.filename);
   if (!filename) {
     return res.status(400).type("text/plain").send("Invalid filename.");
@@ -142,8 +142,22 @@ app.get("/download/:filename", (req, res) => {
   res.download(filePath, filename);
 });
 
+app.get("/uploads/:filename", requireUploadAuth, (req, res) => {
+  const filename = safePdfFilename(req.params.filename);
+  if (!filename) {
+    return res.status(400).type("text/plain").send("Invalid filename.");
+  }
+
+  const filePath = path.join(UPLOADS_DIR, filename);
+  if (!fs.existsSync(filePath) || !isPdfFileSync(filePath)) {
+    return res.status(404).type("text/plain").send("File not found.");
+  }
+
+  res.type("application/pdf");
+  res.sendFile(filePath);
+});
+
 app.use(express.static("public", { index: false }));
-app.use("/uploads", express.static("uploads"));
 
 // Serve PDF.js from the "public" folder (it should be inside "public/pdfjs")
 app.use("/pdfjs", express.static(path.join(__dirname, "public/pdfjs")));
@@ -168,12 +182,12 @@ app.post("/upload", requireUploadAuth, upload.single("pdf"), (req, res) => {
   fs.renameSync(oldPath, newPath);
   queueSearchIndexRefresh(UPLOADS_DIR);
 
-  // Direct URL to the uploaded PDF
-  const fileUrl = `https://${req.get("host")}/uploads/${req.file.filename}.pdf`;
+  // Direct URL to the uploaded PDF (requires login unless using a public embed token)
+  const fileUrl = getBaseUrl(req) + "/uploads/" + req.file.filename + ".pdf";
 
   // PDF.js viewer URL
   const viewerUrl =
-    `https://${req.get("host")}/pdfjs/web/viewer.html?file=${encodeURIComponent(fileUrl)}#toolbar=0&download=false&print=false`;
+    getBaseUrl(req) + "/pdfjs/web/viewer.html?file=" + encodeURIComponent(fileUrl) + "#toolbar=0&download=false&print=false";
 
   // The fullscreen wrapper structure you want teachers to embed in Moodle
   const iframeHtml = `
@@ -245,8 +259,13 @@ ${escapedIframeHtml}
 });
 
 // Handle the file view using PDF.js
-app.get("/view/:filename", (req, res) => {
-  const fileUrl = `https://${req.get("host")}/uploads/${req.params.filename}`;
+app.get("/view/:filename", requireUploadAuth, (req, res) => {
+  const filename = safePdfFilename(req.params.filename);
+  if (!filename) {
+    return res.status(400).type("text/plain").send("Invalid filename.");
+  }
+
+  const fileUrl = getBaseUrl(req) + "/uploads/" + filename;
 
   // Embed PDF.js viewer and pass the file URL as a query parameter
   res.send(`
