@@ -45,9 +45,13 @@ app.use(
 
 app.use(express.urlencoded({ extended: true }));
 
+const MAX_UPLOAD_MB = Math.max(1, Number.parseInt(process.env.MAX_UPLOAD_MB, 10) || 1024);
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
+const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000;
+
 const upload = multer({
   dest: UPLOADS_DIR,
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 });
 
 function safeNext(n) {
@@ -76,9 +80,9 @@ function requireUploadAuth(req, res, next) {
   res.status(401).send("Unauthorized");
 }
 
-// 10-minute timeout
 app.use((req, res, next) => {
-  res.setTimeout(600000, () => {
+  req.setTimeout(UPLOAD_TIMEOUT_MS);
+  res.setTimeout(UPLOAD_TIMEOUT_MS, () => {
     res.status(408).send("Request Timeout");
   });
   next();
@@ -289,7 +293,10 @@ app.get("/view/:filename", (req, res) => {
 
 app.use((err, req, res, next) => {
   if (err && err.code === "LIMIT_FILE_SIZE") {
-    return res.status(413).type("text/plain").send("File too large.");
+    return res
+      .status(413)
+      .type("text/plain")
+      .send("File too large. Maximum size is " + MAX_UPLOAD_MB + " MB.");
   }
   next(err);
 });
@@ -297,9 +304,14 @@ app.use((err, req, res, next) => {
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
 
-app.listen(PORT, HOST, () => {
+const server = app.listen(PORT, HOST, () => {
   console.log(`✅ Server listening on http://${HOST}:${PORT}`);
+  console.log(`Max upload size: ${MAX_UPLOAD_MB} MB`);
   warmSearchIndex(UPLOADS_DIR).catch((err) => {
     console.error("Failed to build initial PDF search index:", err);
   });
 });
+
+server.timeout = UPLOAD_TIMEOUT_MS;
+server.requestTimeout = UPLOAD_TIMEOUT_MS;
+server.headersTimeout = UPLOAD_TIMEOUT_MS + 5000;
